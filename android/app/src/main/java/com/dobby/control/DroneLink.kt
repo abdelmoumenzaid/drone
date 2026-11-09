@@ -36,8 +36,13 @@ class DroneLink(private val wifi: Network?) {
     @Volatile var rtpAcks = 0          // réponses « OK » du drone à start-RTP
     @Volatile var cameraReplies = 0    // réponses du module caméra (0x51 / 0x7D)
 
-    // État décodé du paquet 0x48 (ZOWarningMdel de DoFun)
+    // État décodé du paquet 0x48 (ZOWarningMdel de DoFun) et télémétrie 0x01
     @Volatile var stateText = ""
+    @Volatile var batteryText = ""
+    private var lastBatt = -1
+    private var groupedLogged = 0
+    private var unknownLogged = 0
+    private var e1Logged = 0
     private var lastFly = -1
     private var lastMotor = -1
     private var lastWarn = -1L
@@ -161,27 +166,67 @@ class DroneLink(private val wifi: Network?) {
                 rxCount++
                 if (n > maxRx) maxRx = n
 
-                if (n >= 4 && (buf[0].toInt() and 0xFF) == 0x0A) {
-                    // Réponse du drone : 0A LEN MODULE ...
-                    val mod = buf[2].toInt() and 0xFF
-                    val cmd = buf[3].toInt() and 0xFF
-                    if (mod == 0x48) {
-                        onDroneState(buf, n)          // état + alertes, journalisé à chaque changement
-                    } else {
-                        val key = (mod shl 8) or cmd
-                        val c = seen[key] ?: 0
-                        if (c < 3) {
-                            seen[key] = c + 1
-                            Logger.log("RX ${String.format("%02x/%02x", mod, cmd)} ${n}o  ${Logger.hex(buf, minOf(n, 20))}")
-                        }
-                    }
-                    if (mod == 0x51 || mod == 0x7D) cameraReplies++
-                    if (mod == 0x7D && cmd == 0x01 && n >= 7) onRtpAck(buf[6].toInt() and 0xFF)
-                } else if (rxCount <= 3 || n > 200) {
-                    Logger.log("RX ?? ${n}o  ${Logger.hex(buf, minOf(n, 12))}")
+                // Découpage comme DoFun (UavDataPacketParseUtil) : un datagramme peut contenir
+                // PLUSIEURS paquets 0A LEN MODULE … ; on les extrait tous, l'un après l'autre.
+                var off = 0
+                var count = 0
+                while (off + 4 <= n) {
+                    if ((buf[off].toInt() and 0xFF) != 0x0A) { off++; continue }
+                    val len = buf[off + 1].toInt() and 0xFF
+                    if (len < 4 || off + len > n) { off++; continue }
+                    dispatch(buf.copyOfRange(off, off + len))
+                    off += len; count++
+                }
+                if (count > 1 && groupedLogged < 5) {
+                    groupedLogged++; Logger.log("Datagramme groupé : $count paquets dans ${n}o")
+                }
+                if (count == 0 && unknownLogged < 5) {
+                    unknownLogged++; Logger.log("RX ?? ${n}o  ${Logger.hex(buf, minOf(n, 16))}")
                 }
             } catch (_: java.net.SocketTimeoutException) {
             } catch (_: Exception) { break }
+        }
+    }
+
+    /** Aiguillage d'un paquet du drone selon son module (octet 2), comme la chaîne de DoFun. */
+    private fun dispatch(p: ByteArray) {
+        val n = p.size
+        val mod = p[2].toInt() and 0xFF
+        val cmd = p[3].toInt() and 0xFF
+        when (mod) {
+            0x48 -> { onDroneState(p, n); return }       // ZOHandleDroneState : état + alertes
+            0x01 -> { onFlightData(p, n); return }       // ZOHandleDroneParam : batterie, hauteur…
+            0xE1 -> {                                    // ZOHandleCameraInfo : réponses caméra
+                cameraReplies++
+                if (e1Logged < 10) { e1Logged++; Logger.log("RX caméra e1/${String.format("%02x", cmd)} ${n}o  ${Logger.hex(p, minOf(n, 16))}") }
+                if (cmd == 0x01 && n >= 7) onRtpAck(p[6].toInt() and 0xFF)
+                return
+            }
+            0x51 -> cameraReplies++
+        }
+        val key = (mod shl 8) or cmd
+        val c = seen[key] ?: 0
+        if (c < 3) {
+            seen[key] = c + 1
+            Logger.log("RX ${String.format("%02x/%02x", mod, cmd)} ${n}o  ${Logger.hex(p, minOf(n, 20))}")
+        }
+    }
+
+    /**
+     * Télémétrie de vol, module 0x01 (FlyControllerEntity de DoFun) :
+     * [52] batterie %, [69..70] tension (brute), [47..48] hauteur (dm, signée).
+     */
+    private fun onFlightData(p: ByteArray, n: Int) {
+        if (n < 77) return
+        val batt = p[52].toInt() and 0xFF
+        val vRaw = (p[69].toInt() and 0xFF) or ((p[70].toInt() and 0xFF) shl 8)
+        val hRaw = (p[47].toInt() and 0xFF) or (p[48].toInt() shl 8)
+        val volts = if (vRaw > 2000) vRaw / 1000.0 else vRaw / 100.0
+        val h = if (hRaw >= 20000) (hRaw - 20000) / 100.0 else hRaw / 10.0
+        batteryText = String.format("Batterie %d %%  %.2f V   hauteur %.1f m", batt, volts, h)
+        if (lastBatt < 0 || kotlin.math.abs(batt - lastBatt) >= 5) {
+            Logger.log("Batterie : $batt %  (tension brute $vRaw ≈ ${String.format("%.2f", volts)} V)")
+            lastBatt = batt
         }
     }
 

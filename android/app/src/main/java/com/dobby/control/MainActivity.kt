@@ -107,7 +107,8 @@ class MainActivity : Activity() {
         val droneTxt = if (l != null && System.currentTimeMillis() - l.lastRxMs < 2000)
             "Drone ✓ (${l.rxCount}, max ${l?.maxRx}o)" else "Drone ✗ pas de réponse"
         val vidTxt = if (camOn) "   Vidéo: ${videoView.packetCount} paq, OK ${l?.rtpAcks ?: 0}, caméra ${l?.cameraReplies ?: 0}" else ""
-        val stateTxt = if (l != null && l.stateText.isNotEmpty()) "\n${l.stateText}" else ""
+        val battTxt = if (l != null && l.batteryText.isNotEmpty()) "\n${l.batteryText}" else ""
+        val stateTxt = battTxt + if (l != null && l.stateText.isNotEmpty()) "\n${l.stateText}" else ""
         txtStatus.text = "$armedTxt    $droneTxt$vidTxt$stateTxt"
         txtLog.text = Logger.dump()
     }

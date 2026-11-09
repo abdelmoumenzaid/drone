@@ -35,9 +35,13 @@ object Warnings {
     fun describe(w: Long): List<String> =
         (0 until 32).filter { ((w ushr it) and 1L) == 1L }.map { TEXT[it] ?: "alerte n°$it" }
 
+    // 1 et 2 viennent du code de DoFun ; 3 et 5 sont déduits des journaux
+    // (en vol → 3 ou 5 → au sol à chaque atterrissage).
     fun flyName(s: Int): String = when (s) {
         1 -> "au sol"
         2 -> "en vol"
+        3 -> "atterrissage (3)"
+        5 -> "atterrissage (5)"
         else -> "état $s"
     }
 }
