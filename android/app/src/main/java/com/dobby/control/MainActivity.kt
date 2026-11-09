@@ -35,6 +35,14 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // Fichier de log : dossier Téléchargements si possible, sinon dossier privé de l'appli.
+        val dir = try {
+            android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS)
+        } catch (_: Exception) { null } ?: getExternalFilesDir(null)
+        Logger.init(dir)
+        Logger.log("Démarrage. Fichier log : ${Logger.filePath}")
+
         videoView = findViewById(R.id.videoView)
         stickLeft = findViewById(R.id.stickLeft)
         stickRight = findViewById(R.id.stickRight)
@@ -52,6 +60,15 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.btnT08).setOnClickListener { link?.testFlight(0x08) }
         findViewById<Button>(R.id.btnT0B).setOnClickListener { link?.testFlight(0x0B) }
         findViewById<Button>(R.id.btnT11).setOnClickListener { link?.testFlight(0x11) }
+
+        // Partage du journal (pour me l'envoyer facilement)
+        findViewById<Button>(R.id.btnLog).setOnClickListener {
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND)
+            send.type = "text/plain"
+            send.putExtra(android.content.Intent.EXTRA_SUBJECT, "Dobby log")
+            send.putExtra(android.content.Intent.EXTRA_TEXT, Logger.fullText())
+            startActivity(android.content.Intent.createChooser(send, "Envoyer le journal"))
+        }
 
         // Joystick gauche : x = lacet, y = gaz (haut = +)
         stickLeft.onMove = { x, y ->

@@ -82,6 +82,10 @@
                 android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:minWidth="0dp" android:text="STOP"
                 android:backgroundTint="#8a1f22" android:textColor="#e7edf5" />
+            <Button android:id="@+id/btnLog"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:minWidth="0dp" android:text="LOG"
+                android:backgroundTint="#3a2a5a" android:textColor="#e7edf5" />
         </LinearLayout>
 
         <!-- Boutons de test des commandes de vol (module 0x7D) -->
