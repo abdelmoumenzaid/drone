@@ -78,12 +78,14 @@ class VideoView @JvmOverloads constructor(
                 try {
                     val req = Protocol.startRtp(DroneLink.RTP_PORT, seq)
                     sock.send(DatagramPacket(req, req.size, drone, DroneLink.PORT_CONTROL))
+                    if (seq <= 2) Logger.log("TX start-RTP(7078)  ${Logger.hex(req)}")
                 } catch (_: Exception) {}
                 lastReq = now
             }
             try {
                 sock.receive(pkt)
                 packetCount++
+                if (packetCount <= 3) Logger.log("RX vidéo ${pkt.length}o  ${Logger.hex(buf, 14)}")
                 handleRtp(buf, pkt.length)
             } catch (_: java.net.SocketTimeoutException) {
             } catch (_: Exception) { break }
@@ -129,8 +131,8 @@ class VideoView @JvmOverloads constructor(
     private fun emit(nal: ByteArray) {
         if (nal.isEmpty()) return
         when (nal[0].toInt() and 0x1F) {
-            7 -> { sps = nal; tryConfigure() }
-            8 -> { pps = nal; tryConfigure() }
+            7 -> { sps = nal; Logger.log("SPS reçu (${nal.size}o)"); tryConfigure() }
+            8 -> { pps = nal; Logger.log("PPS reçu (${nal.size}o)"); tryConfigure() }
         }
         if (!configured) return
         feed(START + nal)

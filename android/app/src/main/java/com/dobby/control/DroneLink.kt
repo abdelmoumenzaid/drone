@@ -66,6 +66,9 @@ class DroneLink(private val wifi: Network?) {
                 lastRxMs = System.currentTimeMillis()
                 rxCount++
                 if (pkt.length > maxRx) maxRx = pkt.length
+                // journalise les 2 premiers paquets et tout gros paquet (vidéo = sur mauvais port ?)
+                if (rxCount <= 2 || pkt.length > 200)
+                    Logger.log("RX ctrl ${pkt.length}o  ${Logger.hex(buf, minOf(pkt.length, 12))}")
             } catch (_: java.net.SocketTimeoutException) {
             } catch (_: Exception) { break }
         }
@@ -82,14 +85,26 @@ class DroneLink(private val wifi: Network?) {
         throttle = Protocol.NEUTRAL; yaw = Protocol.NEUTRAL
     }
 
-    fun takeoff() { cmdTakeoff?.let { enqueue(Protocol.moduleCmd(it.first, it.second, nextSeq())) } }
-    fun land()    { cmdLand?.let    { enqueue(Protocol.moduleCmd(it.first, it.second, nextSeq())) } }
+    fun takeoff() {
+        val p = Protocol.takeoffPacket(); enqueue(p)
+        Logger.log("TX décollage  ${Logger.hex(p)}")
+    }
+    fun land() {
+        val p = Protocol.landPacket(nextSeq()); enqueue(p)
+        Logger.log("TX atterrissage  ${Logger.hex(p)}")
+    }
+    /** Test : envoie une commande du module vol (0x7D) avec l'identifiant donné. */
+    fun testFlight(cmdId: Int) {
+        val p = Protocol.moduleCmd(0x7D, cmdId, nextSeq()); enqueue(p)
+        Logger.log("TX test 7D/${String.format("%02x", cmdId)}  ${Logger.hex(p)}")
+    }
     @Synchronized private fun enqueue(p: ByteArray) { pending.add(p) }
 
     /** Séquence d'activation caméra/vidéo (ce que l'écran caméra de DoFun envoie). */
     fun enableVideo() {
         val a6 = byteArrayOf(0xA6.toByte(), 0xA6.toByte(), 0xA6.toByte(), 0xA6.toByte())
         val a5 = byteArrayOf(0xA5.toByte(), 0xA5.toByte(), 0xA5.toByte(), 0xA5.toByte())
+        Logger.log("TX activation caméra (u/v/t/n/w/x)")
         // envoyées 2 fois pour fiabilité
         repeat(2) {
             enqueue(Protocol.cmd(0xE0, 0xC9, nextSeq()))          // u()

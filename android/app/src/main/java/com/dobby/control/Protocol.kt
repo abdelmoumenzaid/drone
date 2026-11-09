@@ -53,6 +53,17 @@ object Protocol {
 
     fun moduleCmd(module: Int, cmd: Int, seq: Int): ByteArray = cmd(module, cmd, seq)
 
+    /** Décollage : f() dans DoFun = A0 07 46 46 46 46 05 (sans numéro de séquence). */
+    fun takeoffPacket(): ByteArray {
+        val buf = byteArrayOf(0xA0.toByte(), 0x07, 0x46, 0x46, 0x46, 0x46, 0x00)
+        buf[6] = checksum(buf).toByte()
+        return buf
+    }
+
+    /** Atterrissage : o() dans DoFun = A0 0D 51 2C <seq> 2C 2C 2C 2C 00 00 <chk>. */
+    fun landPacket(seq: Int): ByteArray =
+        cmd(0x51, 0x2C, seq, byteArrayOf(0x2C, 0x2C, 0x2C, 0x2C, 0x00, 0x00))
+
     /**
      * Démarre le flux vidéo : module 0x7D, cmd 0x01, paramètre = port local (little-endian).
      * A0 09 7D 01 <seq_hi> <seq_lo> <port_lo> <port_hi> <chk>.

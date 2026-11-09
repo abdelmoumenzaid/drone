@@ -20,6 +20,7 @@ class MainActivity : Activity() {
     private lateinit var stickLeft: JoystickView
     private lateinit var stickRight: JoystickView
     private lateinit var txtStatus: TextView
+    private lateinit var txtLog: TextView
     private lateinit var btnTakeoff: Button
     private lateinit var btnLand: Button
 
@@ -38,11 +39,19 @@ class MainActivity : Activity() {
         stickLeft = findViewById(R.id.stickLeft)
         stickRight = findViewById(R.id.stickRight)
         txtStatus = findViewById(R.id.txtStatus)
+        txtLog = findViewById(R.id.txtLog)
         btnTakeoff = findViewById(R.id.btnTakeoff)
         btnLand = findViewById(R.id.btnLand)
         val btnStop = findViewById<Button>(R.id.btnStop)
         val btnCam = findViewById<Button>(R.id.btnCam)
         val swArm = findViewById<Switch>(R.id.swArm)
+
+        // boutons de test des commandes du module vol 0x7D
+        findViewById<Button>(R.id.btnT03).setOnClickListener { link?.testFlight(0x03) }
+        findViewById<Button>(R.id.btnT04).setOnClickListener { link?.testFlight(0x04) }
+        findViewById<Button>(R.id.btnT08).setOnClickListener { link?.testFlight(0x08) }
+        findViewById<Button>(R.id.btnT0B).setOnClickListener { link?.testFlight(0x0B) }
+        findViewById<Button>(R.id.btnT11).setOnClickListener { link?.testFlight(0x11) }
 
         // Joystick gauche : x = lacet, y = gaz (haut = +)
         stickLeft.onMove = { x, y ->
@@ -56,8 +65,9 @@ class MainActivity : Activity() {
         }
 
         swArm.setOnCheckedChangeListener { _, checked -> setArmed(checked) }
-        btnTakeoff.setOnClickListener { if (link?.armed == true) { link?.takeoff(); toast("Décollage envoyé") } }
-        btnLand.setOnClickListener { if (link?.armed == true) { link?.land(); toast("Atterrissage envoyé") } }
+        // décollage/atterrissage envoyés même sans armer, pour les tests (hélices enlevées)
+        btnTakeoff.setOnClickListener { link?.takeoff(); toast("Décollage envoyé") }
+        btnLand.setOnClickListener { link?.land(); toast("Atterrissage envoyé") }
         btnStop.setOnClickListener {
             link?.setNeutral(); swArm.isChecked = false; setArmed(false); toast("ARRÊT D'URGENCE")
         }
@@ -81,6 +91,7 @@ class MainActivity : Activity() {
             "Drone ✓ (${l.rxCount}, max ${l?.maxRx}o)" else "Drone ✗ pas de réponse"
         val vidTxt = if (camOn) "   Vidéo: ${videoView.packetCount} paq" else ""
         txtStatus.text = "$armedTxt    $droneTxt$vidTxt"
+        txtLog.text = Logger.dump()
     }
 
     private fun requestWifi() {
@@ -106,8 +117,7 @@ class MainActivity : Activity() {
     private fun setArmed(on: Boolean) {
         link?.armed = on
         if (!on) link?.setNeutral()
-        btnTakeoff.isEnabled = on
-        btnLand.isEnabled = on
+        Logger.log(if (on) "ARMÉ" else "DÉSARMÉ")
     }
 
     private fun toggleCam(btnCam: Button) {
