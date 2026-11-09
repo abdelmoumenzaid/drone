@@ -86,6 +86,21 @@ class DroneLink(private val wifi: Network?) {
     fun land()    { cmdLand?.let    { enqueue(Protocol.moduleCmd(it.first, it.second, nextSeq())) } }
     @Synchronized private fun enqueue(p: ByteArray) { pending.add(p) }
 
+    /** Séquence d'activation caméra/vidéo (ce que l'écran caméra de DoFun envoie). */
+    fun enableVideo() {
+        val a6 = byteArrayOf(0xA6.toByte(), 0xA6.toByte(), 0xA6.toByte(), 0xA6.toByte())
+        val a5 = byteArrayOf(0xA5.toByte(), 0xA5.toByte(), 0xA5.toByte(), 0xA5.toByte())
+        // envoyées 2 fois pour fiabilité
+        repeat(2) {
+            enqueue(Protocol.cmd(0xE0, 0xC9, nextSeq()))          // u()
+            enqueue(Protocol.cmd(0xE0, 0xCA, nextSeq()))          // v()
+            enqueue(Protocol.cmd(0xE0, 0xC4, nextSeq()))          // t()
+            enqueue(Protocol.cmd(0x51, 0x15, nextSeq()))          // n()
+            enqueue(Protocol.cmd(0x51, 0x06, nextSeq(), a6))      // w()
+            enqueue(Protocol.cmd(0x51, 0x05, nextSeq(), a5))      // x()
+        }
+    }
+
     private fun loop() {
         try {
             addr = InetAddress.getByName(DRONE_IP)

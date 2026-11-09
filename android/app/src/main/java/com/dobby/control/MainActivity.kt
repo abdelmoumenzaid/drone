@@ -112,8 +112,10 @@ class MainActivity : Activity() {
 
     private fun toggleCam(btnCam: Button) {
         link?.video = camOn
-        if (camOn) { videoView.start(); btnCam.text = "CAM ■"; toast("Flux vidéo démarré") }
-        else { videoView.stop(); btnCam.text = "CAM" }
+        if (camOn) {
+            link?.enableVideo()          // séquence d'activation caméra
+            videoView.start(); btnCam.text = "CAM ■"; toast("Flux vidéo démarré")
+        } else { videoView.stop(); btnCam.text = "CAM" }
     }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()

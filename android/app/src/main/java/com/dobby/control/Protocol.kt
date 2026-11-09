@@ -36,18 +36,22 @@ object Protocol {
         return buf
     }
 
-    /** Commande module/cmd simple : A0 07 <module> <cmd> <seq_hi> <seq_lo> <chk>. */
-    fun moduleCmd(module: Int, cmd: Int, seq: Int): ByteArray {
-        val buf = ByteArray(7)
+    /** Commande générique : A0 LEN <module> <cmd> <seq_hi> <seq_lo> [payload] <chk>. */
+    fun cmd(module: Int, cmd: Int, seq: Int, payload: ByteArray = ByteArray(0)): ByteArray {
+        val len = 7 + payload.size
+        val buf = ByteArray(len)
         buf[0] = 0xA0.toByte()
-        buf[1] = 7
+        buf[1] = (len and 0xFF).toByte()
         buf[2] = (module and 0xFF).toByte()
         buf[3] = (cmd and 0xFF).toByte()
         buf[4] = ((seq ushr 8) and 0xFF).toByte()
         buf[5] = (seq and 0xFF).toByte()
-        buf[6] = checksum(buf).toByte()
+        for (i in payload.indices) buf[6 + i] = payload[i]
+        buf[len - 1] = checksum(buf).toByte()
         return buf
     }
+
+    fun moduleCmd(module: Int, cmd: Int, seq: Int): ByteArray = cmd(module, cmd, seq)
 
     /**
      * Démarre le flux vidéo : module 0x7D, cmd 0x01, paramètre = port local (little-endian).
