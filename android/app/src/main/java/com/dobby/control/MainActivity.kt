@@ -7,6 +7,8 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.Button
 import android.widget.Switch
 import android.widget.TextView
@@ -63,6 +65,22 @@ class MainActivity : Activity() {
 
         // Binding au Wi-Fi du drone : seulement sur Android 6+ (le J1 route déjà par le Wi-Fi).
         if (Build.VERSION.SDK_INT >= 23) requestWifi() else startLink()
+
+        ui.post(statusTick)
+    }
+
+    private val ui = Handler(Looper.getMainLooper())
+    private val statusTick = object : Runnable {
+        override fun run() { updateStatus(); ui.postDelayed(this, 500) }
+    }
+
+    private fun updateStatus() {
+        val l = link
+        val armedTxt = if (l?.armed == true) "ARMÉ" else "DÉSARMÉ"
+        val droneTxt = if (l != null && System.currentTimeMillis() - l.lastRxMs < 2000)
+            "Drone ✓ (${l.rxCount})" else "Drone ✗ pas de réponse"
+        val vidTxt = if (camOn) "   Vidéo: ${videoView.packetCount} paq" else ""
+        txtStatus.text = "$armedTxt    $droneTxt$vidTxt"
     }
 
     private fun requestWifi() {
@@ -88,7 +106,6 @@ class MainActivity : Activity() {
     private fun setArmed(on: Boolean) {
         link?.armed = on
         if (!on) link?.setNeutral()
-        txtStatus.text = if (on) "ARMÉ" else "DÉSARMÉ"
         btnTakeoff.isEnabled = on
         btnLand.isEnabled = on
     }
@@ -103,6 +120,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        ui.removeCallbacks(statusTick)
         link?.stop()
         videoView.stop()
     }

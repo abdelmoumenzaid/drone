@@ -27,6 +27,10 @@ class DroneLink(private val wifi: Network?) {
     @Volatile var armed = false
     @Volatile var video = false
 
+    // Diagnostic : dernière réception d'un paquet du drone + compteur.
+    @Volatile var lastRxMs = 0L
+    @Volatile var rxCount = 0
+
     // Décollage / atterrissage : à confirmer par capture. null = bouton inactif (sécurité).
     // Exemple une fois confirmé : Pair(0x51, 0x2C)
     var cmdTakeoff: Pair<Int, Int>? = null
@@ -42,10 +46,27 @@ class DroneLink(private val wifi: Network?) {
 
     @Synchronized private fun nextSeq(): Int { seq = (seq + 1) and 0xFFFF; return seq }
 
+    private var rxThread: Thread? = null
+
     fun start() {
         if (running) return
         running = true
         thread = Thread { loop() }.apply { isDaemon = true; start() }
+    }
+
+    private fun receiveLoop() {
+        val s = socket ?: return
+        val buf = ByteArray(2048)
+        val pkt = DatagramPacket(buf, buf.size)
+        try { s.soTimeout = 1000 } catch (_: Exception) {}
+        while (running && !Thread.interrupted()) {
+            try {
+                s.receive(pkt)
+                lastRxMs = System.currentTimeMillis()
+                rxCount++
+            } catch (_: java.net.SocketTimeoutException) {
+            } catch (_: Exception) { break }
+        }
     }
 
     fun stop() {
@@ -79,6 +100,9 @@ class DroneLink(private val wifi: Network?) {
                 socket = s
             } catch (_: Exception) { return }
         }
+
+        // démarre la réception de télémétrie une fois la socket prête
+        rxThread = Thread { receiveLoop() }.apply { isDaemon = true; start() }
 
         var lastHb = 0L
         var lastRtp = 0L

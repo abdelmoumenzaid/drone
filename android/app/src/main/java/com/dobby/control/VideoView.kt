@@ -22,6 +22,7 @@ class VideoView @JvmOverloads constructor(
 ) : SurfaceView(context, attrs), SurfaceHolder.Callback {
 
     var wifi: Network? = null
+    @Volatile var packetCount = 0        // diagnostic : paquets RTP reçus
     @Volatile private var running = false
     private var thread: Thread? = null
     private var codec: MediaCodec? = null
@@ -68,6 +69,7 @@ class VideoView @JvmOverloads constructor(
         while (running && !Thread.interrupted()) {
             try {
                 sock.receive(pkt)
+                packetCount++
                 handleRtp(buf, pkt.length)
             } catch (_: java.net.SocketTimeoutException) {
             } catch (_: Exception) { break }
