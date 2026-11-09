@@ -34,6 +34,13 @@ class DroneLink(private val wifi: Network?) {
     @Volatile var rxCount = 0
     @Volatile var maxRx = 0
     @Volatile var rtpAcks = 0          // réponses « OK » du drone à start-RTP
+    @Volatile var cameraReplies = 0    // réponses du module caméra (0x51 / 0x7D)
+
+    // État décodé du paquet 0x48 (ZOWarningMdel de DoFun)
+    @Volatile var stateText = ""
+    private var lastFly = -1
+    private var lastMotor = -1
+    private var lastWarn = -1L
 
     private var socket: DatagramSocket? = null
     private var thread: Thread? = null
@@ -112,7 +119,16 @@ class DroneLink(private val wifi: Network?) {
                 Protocol.rc(Protocol.NEUTRAL, Protocol.NEUTRAL, Protocol.NEUTRAL, Protocol.NEUTRAL, counter)
             send(pkt, PORT_CONTROL)
 
-            if (now - lastHb >= 1000) { send(Protocol.HEARTBEAT, PORT_CONTROL); lastHb = now }
+            // Chaque seconde, comme J() de DoFun : horloge, heartbeat, présentation de l'appli
+            // au module caméra (sans elle, la caméra ne répond pas).
+            if (now - lastHb >= 1000) {
+                val local = now + java.util.TimeZone.getDefault().getOffset(now)
+                send(Protocol.timeSync(nextSeq(), local), PORT_CONTROL)
+                send(Protocol.HEARTBEAT, PORT_CONTROL)
+                send(Protocol.appTypeVersion(nextSeq()), PORT_CONTROL)
+                if (lastHb == 0L) Logger.log("TX présentation appli  ${Logger.hex(Protocol.appTypeVersion(0))}")
+                lastHb = now
+            }
 
             // Vidéo : comme DoFun (L()), start-RTP toutes les 500 ms depuis le socket de commande,
             // tant que le flux n'arrive pas.
@@ -146,15 +162,20 @@ class DroneLink(private val wifi: Network?) {
                 if (n > maxRx) maxRx = n
 
                 if (n >= 4 && (buf[0].toInt() and 0xFF) == 0x0A) {
-                    // Réponse du drone : 0A LEN MODULE CMD ...
+                    // Réponse du drone : 0A LEN MODULE ...
                     val mod = buf[2].toInt() and 0xFF
                     val cmd = buf[3].toInt() and 0xFF
-                    val key = (mod shl 8) or cmd
-                    val c = seen[key] ?: 0
-                    if (c < 3) {
-                        seen[key] = c + 1
-                        Logger.log("RX ${String.format("%02x/%02x", mod, cmd)} ${n}o  ${Logger.hex(buf, minOf(n, 12))}")
+                    if (mod == 0x48) {
+                        onDroneState(buf, n)          // état + alertes, journalisé à chaque changement
+                    } else {
+                        val key = (mod shl 8) or cmd
+                        val c = seen[key] ?: 0
+                        if (c < 3) {
+                            seen[key] = c + 1
+                            Logger.log("RX ${String.format("%02x/%02x", mod, cmd)} ${n}o  ${Logger.hex(buf, minOf(n, 20))}")
+                        }
                     }
+                    if (mod == 0x51 || mod == 0x7D) cameraReplies++
                     if (mod == 0x7D && cmd == 0x01 && n >= 7) onRtpAck(buf[6].toInt() and 0xFF)
                 } else if (rxCount <= 3 || n > 200) {
                     Logger.log("RX ?? ${n}o  ${Logger.hex(buf, minOf(n, 12))}")
@@ -162,6 +183,29 @@ class DroneLink(private val wifi: Network?) {
             } catch (_: java.net.SocketTimeoutException) {
             } catch (_: Exception) { break }
         }
+    }
+
+    /**
+     * Paquet d'état 0x48 (ZOWarningMdel) : [3] moteurs, [4] état de vol, [5] positionnement,
+     * [25..28] alertes (32 bits, poids faible en premier).
+     */
+    private fun onDroneState(b: ByteArray, n: Int) {
+        if (n < 29) return
+        val motor = b[3].toInt() and 0xFF
+        val fly = b[4].toInt() and 0xFF
+        val loc = b[5].toInt() and 0xFF
+        val w = (b[25].toLong() and 0xFF) or ((b[26].toLong() and 0xFF) shl 8) or
+                ((b[27].toLong() and 0xFF) shl 16) or ((b[28].toLong() and 0xFF) shl 24)
+        if (fly != lastFly || motor != lastMotor) {
+            Logger.log("ÉTAT : ${Warnings.flyName(fly)}, moteurs ${if (motor != 0) "ON" else "off"}, position 0x${String.format("%02x", loc)}")
+            lastFly = fly; lastMotor = motor
+        }
+        val alerts = Warnings.describe(w)
+        if (w != lastWarn) {
+            Logger.log(if (alerts.isEmpty()) "Alertes : aucune" else "ALERTE : ${alerts.joinToString(" | ")}  (0x${java.lang.Long.toHexString(w)})")
+            lastWarn = w
+        }
+        stateText = Warnings.flyName(fly) + if (alerts.isEmpty()) "" else "  ⚠ " + alerts.joinToString(" | ")
     }
 
     /** Réponse du drone à start-RTP. Code 1 = accepté → poignée de main vidéo de DoFun. */

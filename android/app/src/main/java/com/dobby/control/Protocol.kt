@@ -58,7 +58,25 @@ object Protocol {
 
     fun moduleCmd(module: Int, cmd: Int, seq: Int): ByteArray = cmd(module, cmd, seq)
 
-    /** Décollage : f() dans DoFun = A0 07 46 46 46 46 05 (sans numéro de séquence). */
+    /**
+     * A() « sendAppTypeVersion » de DoFun, envoyé chaque seconde au MODULE CAMÉRA (0x51, cmd 0xDF).
+     * L'appli s'y présente : type 1 = Dobby, version 2.2.6.
+     * A0 10 51 DF <seq> 00 01 02 02 06 00 00 01 00 <chk>
+     */
+    fun appTypeVersion(seq: Int): ByteArray =
+        cmd(0x51, 0xDF, seq, byteArrayOf(0x00, 0x01, 0x02, 0x02, 0x06, 0x00, 0x00, 0x01, 0x00))
+
+    /**
+     * M() de DoFun : synchro de l'horloge, chaque seconde. Module 0xE0, cmd 0xC2,
+     * heure locale en ms sur 8 octets, poids faible en premier.
+     */
+    fun timeSync(seq: Int, localMs: Long): ByteArray {
+        val p = ByteArray(8)
+        for (i in 0 until 8) p[i] = ((localMs ushr (8 * i)) and 0xFF).toByte()
+        return cmd(0xE0, 0xC2, seq, p)
+    }
+
+    /** Décollage : f() dans DoFun = A0 07 46 46 46 46 BF (sans numéro de séquence). Confirmé en vol. */
     fun takeoffPacket(): ByteArray {
         val buf = byteArrayOf(0xA0.toByte(), 0x07, 0x46, 0x46, 0x46, 0x46, 0x00)
         buf[6] = checksum(buf).toByte()
