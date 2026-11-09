@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0e14">
+<title>Dobby Control</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#131a24; --line:#1f2a38;
+    --txt:#e7edf5; --dim:#7d8b9c;
+    --accent:#3dd6c4; --warn:#ffb020; --danger:#ff4d4f; --ok:#38d66b;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none;}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;}
+
+  /* Rotate hint (portrait) */
+  #rotate{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;
+    background:var(--bg);text-align:center;padding:2rem;flex-direction:column;gap:1rem;}
+  #rotate svg{width:64px;height:64px;opacity:.7}
+  @media (orientation:portrait){#rotate{display:flex} #app{display:none}}
+
+  /* Top bar */
+  .bar{display:flex;align-items:center;gap:.6rem;padding:.5rem .8rem;
+    background:var(--panel);border-bottom:1px solid var(--line);font-size:.8rem;}
+  .pill{display:flex;align-items:center;gap:.4rem;padding:.25rem .6rem;border-radius:999px;
+    background:#0e1620;border:1px solid var(--line);white-space:nowrap;}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--danger);transition:background .2s;}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok);}
+  .dot.warn{background:var(--warn);}
+  .spacer{flex:1}
+  .val{font-variant-numeric:tabular-nums;font-weight:600}
+  .lbl{color:var(--dim);}
+
+  /* FPV video background */
+  #fpv{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;display:none;z-index:0;}
+  #fpvHint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--dim);font-size:.8rem;z-index:0;pointer-events:none;}
+  #fpvHint.hide{display:none}
+
+  /* Main flight area */
+  .stage{flex:1;position:relative;display:flex;align-items:stretch;justify-content:space-between;z-index:1;}
+  .stick{background:rgba(14,22,32,.55)!important;backdrop-filter:blur(2px);}
+
+  .stick{position:relative;width:40vw;max-width:260px;aspect-ratio:1;align-self:center;margin:0 3vw;
+    border-radius:50%;background:radial-gradient(circle at 50% 50%,#121a26,#0c121a);
+    border:1px solid var(--line);touch-action:none;}
+  .stick::before{content:"";position:absolute;inset:18%;border-radius:50%;border:1px dashed #223042;}
+  .stick .cross{position:absolute;inset:0;}
+  .stick .cross::before,.stick .cross::after{content:"";position:absolute;background:#1c2938;}
+  .stick .cross::before{left:50%;top:8%;bottom:8%;width:1px;transform:translateX(-.5px);}
+  .stick .cross::after{top:50%;left:8%;right:8%;height:1px;transform:translateY(-.5px);}
+  .knob{position:absolute;top:50%;left:50%;width:30%;height:30%;border-radius:50%;
+    transform:translate(-50%,-50%);background:radial-gradient(circle at 35% 30%,#4a5a6e,#263241);
+    border:1px solid #33455a;box-shadow:0 4px 12px rgba(0,0,0,.5);transition:background .1s;}
+  .stick.active .knob{background:radial-gradient(circle at 35% 30%,#53e3d2,#1b7d73);border-color:var(--accent);}
+  .axlabel{position:absolute;color:var(--dim);font-size:.62rem;letter-spacing:.08em;}
+  .axlabel.top{top:6px;left:50%;transform:translateX(-50%)}
+  .axlabel.bottom{bottom:6px;left:50%;transform:translateX(-50%)}
+  .axlabel.left{left:8px;top:50%;transform:translateY(-50%)}
+  .axlabel.right{right:8px;top:50%;transform:translateY(-50%)}
+
+  /* Center controls */
+  .center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6rem;padding:.4rem;}
+  .btn{border:none;border-radius:12px;padding:.7rem 1rem;font-size:.82rem;font-weight:700;
+    color:var(--txt);background:var(--panel);border:1px solid var(--line);min-width:118px;text-align:center;}
+  .btn:active{transform:scale(.96)}
+  .btn.primary{background:linear-gradient(#1b7d73,#14655d);border-color:var(--accent);}
+  .btn.land{background:linear-gradient(#b6821a,#8a6413);border-color:var(--warn);}
+  .btn.estop{background:linear-gradient(#b3282b,#8a1f22);border-color:var(--danger);}
+  .btn:disabled{opacity:.4}
+  .arm{display:flex;align-items:center;gap:.5rem;font-size:.75rem;color:var(--dim)}
+  .switch{width:46px;height:26px;border-radius:999px;background:#2a3645;position:relative;transition:background .2s;border:1px solid var(--line)}
+  .switch .n{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#7d8b9c;transition:.2s}
+  .switch.on{background:#14655d}.switch.on .n{left:22px;background:var(--accent)}
+
+  .toast{position:fixed;left:50%;bottom:10px;transform:translateX(-50%);background:#0e1620;
+    border:1px solid var(--line);padding:.5rem .9rem;border-radius:10px;font-size:.78rem;opacity:0;
+    transition:opacity .25s;pointer-events:none;max-width:90vw;text-align:center}
+  .toast.show{opacity:1}
+  .warnrow{font-size:.66rem;color:var(--warn);text-align:center;opacity:.8}
+</style>
+</head>
+<body>
+<div id="rotate">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 3v2M17 19v2"/></svg>
+  <div>Tourne ton téléphone à l'horizontale</div>
+</div>
+
+<div id="app">
+  <div class="bar">
+    <span class="pill"><span id="dLink" class="dot"></span> <span id="tLink">Pont</span></span>
+    <span class="pill"><span id="dDrone" class="dot"></span> Drone</span>
+    <span class="pill"><span class="lbl">Batt</span> <span id="tBatt" class="val">--</span></span>
+    <span class="pill"><span class="lbl">Mode</span> <span id="tMode" class="val">--</span></span>
+    <span class="spacer"></span>
+    <span id="tState" class="pill">DÉSARMÉ</span>
+  </div>
+
+  <img id="fpv" alt="">
+  <div id="fpvHint">Caméra éteinte — bouton CAM pour démarrer le flux</div>
+
+  <div class="stage">
+    <!-- LEFT stick: throttle (vert) / yaw (horiz) -->
+    <div class="stick" id="stickL">
+      <div class="cross"></div>
+      <span class="axlabel top">MONTER</span><span class="axlabel bottom">DESCENDRE</span>
+      <span class="axlabel left">◀ LACET</span><span class="axlabel right">LACET ▶</span>
+      <div class="knob"></div>
+    </div>
+
+    <div class="center">
+      <button class="btn" id="btnCam">CAM ▶</button>
+      <button class="btn primary" id="btnTakeoff" disabled>Décollage</button>
+      <button class="btn land" id="btnLand" disabled>Atterrissage</button>
+      <button class="btn estop" id="btnStop">ARRÊT D'URGENCE</button>
+      <div class="arm">
+        <span>Armer</span>
+        <div class="switch" id="armSwitch"><div class="n"></div></div>
+      </div>
+      <div class="warnrow">Décollage/atterrissage : à vérifier par capture</div>
+    </div>
+
+    <!-- RIGHT stick: pitch (vert) / roll (horiz) -->
+    <div class="stick" id="stickR">
+      <div class="cross"></div>
+      <span class="axlabel top">AVANT</span><span class="axlabel bottom">ARRIÈRE</span>
+      <span class="axlabel left">◀ GAUCHE</span><span class="axlabel right">DROITE ▶</span>
+      <div class="knob"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  const NEUTRAL=1500, RANGE=500; // 1000..2000
+  const ctl = { roll:NEUTRAL, pitch:NEUTRAL, throttle:NEUTRAL, yaw:NEUTRAL };
+  let armed=false, ws=null, wsReady=false;
+
+  const $=s=>document.querySelector(s);
+  const toast=(m)=>{const t=$("#toast");t.textContent=m;t.classList.add("show");
+    clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),1800);};
+
+  /* ---------- WebSocket to the bridge ---------- */
+  function connect(){
+    const url = (location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws";
+    ws = new WebSocket(url);
+    ws.onopen = ()=>{ wsReady=true; $("#dLink").classList.add("on"); $("#tLink").textContent="Pont OK"; };
+    ws.onclose= ()=>{ wsReady=false; $("#dLink").classList.remove("on"); $("#tLink").textContent="Pont…";
+                      $("#dDrone").classList.remove("on"); setTimeout(connect,1000); };
+    ws.onerror= ()=>{ try{ws.close();}catch(e){} };
+    ws.onmessage = (ev)=>{
+      let m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+      if(m.t==="tel"){
+        if(m.batt!=null) $("#tBatt").textContent = m.batt+"%";
+        if(m.mode!=null) $("#tMode").textContent = m.mode;
+        $("#dDrone").classList.add("on");
+      } else if(m.t==="status"){
+        $("#dDrone").classList.toggle("on", !!m.drone);
+      }
+    };
+  }
+
+  /* send control state at 20 Hz; the bridge keeps its own authoritative loop too */
+  setInterval(()=>{
+    if(wsReady){
+      ws.send(JSON.stringify({t:"rc",
+        r:ctl.roll|0, p:ctl.pitch|0, th:ctl.throttle|0, y:ctl.yaw|0, a:armed?1:0}));
+    }
+  },50);
+
+  function sendCmd(c){ if(wsReady) ws.send(JSON.stringify({t:"cmd",c:c})); }
+
+  /* ---------- Touch joystick ---------- */
+  function makeStick(el, onMove){
+    const knob=el.querySelector(".knob");
+    let id=null, cx=0, cy=0, R=0;
+    function geom(){ const r=el.getBoundingClientRect(); cx=r.left+r.width/2; cy=r.top+r.height/2; R=r.width*0.35; }
+    function set(nx,ny){ knob.style.transform=`translate(calc(-50% + ${nx*R}px), calc(-50% + ${ny*R}px))`; onMove(nx,ny); }
+    function reset(){ knob.style.transform="translate(-50%,-50%)"; onMove(0,0); el.classList.remove("active"); }
+    function move(t){
+      let dx=t.clientX-cx, dy=t.clientY-cy;
+      const d=Math.hypot(dx,dy); if(d>R){ dx*=R/d; dy*=R/d; }
+      set(dx/R, dy/R);
+    }
+    el.addEventListener("touchstart",e=>{ e.preventDefault(); if(id!==null)return;
+      const t=e.changedTouches[0]; id=t.identifier; geom(); el.classList.add("active"); move(t);},{passive:false});
+    el.addEventListener("touchmove",e=>{ for(const t of e.changedTouches){ if(t.identifier===id){ e.preventDefault(); move(t);} }},{passive:false});
+    const end=e=>{ for(const t of e.changedTouches){ if(t.identifier===id){ id=null; reset(); } } };
+    el.addEventListener("touchend",end);el.addEventListener("touchcancel",end);
+    // mouse fallback (desktop testing)
+    let md=false;
+    el.addEventListener("mousedown",e=>{geom();md=true;el.classList.add("active");move(e);});
+    window.addEventListener("mousemove",e=>{if(md)move(e);});
+    window.addEventListener("mouseup",()=>{if(md){md=false;reset();}});
+  }
+
+  // Left: x=yaw, y=throttle(up=+)   Right: x=roll, y=pitch(up=+)
+  makeStick($("#stickL"),(nx,ny)=>{ ctl.yaw=NEUTRAL+nx*RANGE; ctl.throttle=NEUTRAL-ny*RANGE; });
+  makeStick($("#stickR"),(nx,ny)=>{ ctl.roll=NEUTRAL+nx*RANGE; ctl.pitch=NEUTRAL-ny*RANGE; });
+
+  /* ---------- Arm / buttons ---------- */
+  function setArmed(v){
+    armed=v;
+    $("#armSwitch").classList.toggle("on",v);
+    $("#tState").textContent=v?"ARMÉ":"DÉSARMÉ";
+    $("#tState").style.color=v?"var(--ok)":"var(--dim)";
+    $("#btnTakeoff").disabled=!v;
+    $("#btnLand").disabled=!v;
+    sendCmd(v?"arm":"disarm");
+  }
+  $("#armSwitch").addEventListener("click",()=>setArmed(!armed));
+  $("#btnTakeoff").addEventListener("click",()=>{ if(armed){ sendCmd("takeoff"); toast("Décollage envoyé"); }});
+  $("#btnLand").addEventListener("click",()=>{ if(armed){ sendCmd("land"); toast("Atterrissage envoyé"); }});
+  $("#btnStop").addEventListener("click",()=>{
+    ctl.roll=ctl.pitch=ctl.throttle=ctl.yaw=NEUTRAL;
+    setArmed(false); sendCmd("estop"); toast("ARRÊT D'URGENCE");
+  });
+
+  /* ---------- Caméra FPV ---------- */
+  let camOn=false;
+  const fpv=$("#fpv"), fpvHint=$("#fpvHint");
+  $("#btnCam").addEventListener("click",()=>{
+    camOn=!camOn;
+    if(camOn){
+      sendCmd("video_on");
+      // léger délai pour laisser le drone démarrer le flux
+      setTimeout(()=>{ fpv.src="/video.mjpg?t="+Date.now(); fpv.style.display="block";
+                       fpvHint.classList.add("hide"); },400);
+      $("#btnCam").textContent="CAM ■";
+      toast("Flux vidéo démarré");
+    }else{
+      sendCmd("video_off");
+      fpv.style.display="none"; fpv.src=""; fpvHint.classList.remove("hide");
+      $("#btnCam").textContent="CAM ▶";
+    }
+  });
+  fpv.addEventListener("error",()=>{
+    if(camOn){ fpvHint.textContent="Pas de flux — vérifie ffmpeg / la capture RTP";
+               fpvHint.classList.remove("hide"); }
+  });
+
+  connect();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+[Unit]
+Description=Dobby control bridge (web + UDP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Adapte WorkingDirectory et User à ton installation.
+WorkingDirectory=/opt/dobby-web
+ExecStart=/usr/bin/python3 /opt/dobby-web/bridge.py
+Restart=always
+RestartSec=3
+User=dobby
+
+[Install]
+WantedBy=multi-user.target

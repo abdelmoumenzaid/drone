@@ -1,0 +1,21 @@
+# =====================================================================
+#  Dobby — surcouche « production » pour le VPS (partagé avec 1G-Radar / Okko)
+#  Utilisée par deploy/install.sh :
+#    docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+#
+#  - Le pont rejoint le réseau Docker « edge » sous le nom dobby-web : le Caddy de 1G-Radar
+#    (seule porte d'entrée 80/443) le sert en HTTPS (fichier /srv/caddy-sites/dobby.caddy).
+#  - Aucun port public : le pont (8080) reste lié à 127.0.0.1 en plus de l'accès via edge.
+#  - Ne touche ni à 1G-Radar, ni à Okko.
+# =====================================================================
+services:
+  web:
+    networks:
+      default:
+      edge:
+        aliases: [dobby-web]
+
+networks:
+  edge:
+    external: true
+    name: edge

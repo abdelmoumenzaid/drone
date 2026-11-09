@@ -1,0 +1,13 @@
+# Dobby — pont web de contrôle du drone.
+# Local / test :   docker compose up -d --build   puis http://localhost:8080
+# Sur le VPS (comme Okko) : sudo bash deploy/install.sh  (surcouche deploy/docker-compose.prod.yml)
+name: dobby
+
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      # Local uniquement ; sur le VPS c'est le Caddy de 1G-Radar qui expose en HTTPS.
+      - "127.0.0.1:${DOBBY_HTTP_PORT:-8080}:8080"
+    mem_limit: 256m
