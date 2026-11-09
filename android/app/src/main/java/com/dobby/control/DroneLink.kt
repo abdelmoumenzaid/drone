@@ -4,12 +4,14 @@ import android.net.Network
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
 
 /**
- * Liaison UDP avec le drone.
- *  - envoie le RC à 20 Hz + le heartbeat 1 Hz (indispensables),
- *  - relance start-RTP tant que la vidéo est active,
- *  - route les paquets par le Wi-Fi du drone (bindSocket), même sans internet.
+ * Liaison UDP avec le drone, calquée sur DoFun.
+ *  - RC à 20 Hz (canal 8 = compteur libre) + heartbeat 1 Hz,
+ *  - vidéo : start-RTP envoyé DEPUIS CE SOCKET (port 8000), et quand le drone répond
+ *    « OK », envoi de 7D/04, 7D/11, 7D/03 (poignée de main de l'événement 13 de DoFun),
+ *  - journal de chaque type de réponse du drone (en-tête 0x0A).
  */
 class DroneLink(private val wifi: Network?) {
 
@@ -27,51 +29,30 @@ class DroneLink(private val wifi: Network?) {
     @Volatile var armed = false
     @Volatile var video = false
 
-    // Diagnostic : dernière réception d'un paquet du drone + compteur + plus gros paquet reçu.
+    // Diagnostic
     @Volatile var lastRxMs = 0L
     @Volatile var rxCount = 0
     @Volatile var maxRx = 0
-
-    // Décollage / atterrissage : à confirmer par capture. null = bouton inactif (sécurité).
-    // Exemple une fois confirmé : Pair(0x51, 0x2C)
-    var cmdTakeoff: Pair<Int, Int>? = null
-    var cmdLand: Pair<Int, Int>? = null
+    @Volatile var rtpAcks = 0          // réponses « OK » du drone à start-RTP
 
     private var socket: DatagramSocket? = null
     private var thread: Thread? = null
+    private var rxThread: Thread? = null
     @Volatile private var running = false
     private var seq = 0
     private var counter = 0
+    private var rtpReqLogged = 0
     private val pending = ArrayList<ByteArray>()
+    private val seen = HashMap<Int, Int>()   // (module<<8 | cmd) -> lignes déjà journalisées
     private lateinit var addr: InetAddress
 
     @Synchronized private fun nextSeq(): Int { seq = (seq + 1) and 0xFFFF; return seq }
-
-    private var rxThread: Thread? = null
+    @Synchronized private fun enqueue(p: ByteArray) { pending.add(p) }
 
     fun start() {
         if (running) return
         running = true
         thread = Thread { loop() }.apply { isDaemon = true; start() }
-    }
-
-    private fun receiveLoop() {
-        val s = socket ?: return
-        val buf = ByteArray(2048)
-        val pkt = DatagramPacket(buf, buf.size)
-        try { s.soTimeout = 1000 } catch (_: Exception) {}
-        while (running && !Thread.interrupted()) {
-            try {
-                s.receive(pkt)
-                lastRxMs = System.currentTimeMillis()
-                rxCount++
-                if (pkt.length > maxRx) maxRx = pkt.length
-                // journalise les 2 premiers paquets et tout gros paquet (vidéo = sur mauvais port ?)
-                if (rxCount <= 2 || pkt.length > 200)
-                    Logger.log("RX ctrl ${pkt.length}o  ${Logger.hex(buf, minOf(pkt.length, 12))}")
-            } catch (_: java.net.SocketTimeoutException) {
-            } catch (_: Exception) { break }
-        }
     }
 
     fun stop() {
@@ -89,31 +70,16 @@ class DroneLink(private val wifi: Network?) {
         val p = Protocol.takeoffPacket(); enqueue(p)
         Logger.log("TX décollage  ${Logger.hex(p)}")
     }
+
     fun land() {
         val p = Protocol.landPacket(nextSeq()); enqueue(p)
         Logger.log("TX atterrissage  ${Logger.hex(p)}")
     }
+
     /** Test : envoie une commande du module vol (0x7D) avec l'identifiant donné. */
     fun testFlight(cmdId: Int) {
         val p = Protocol.moduleCmd(0x7D, cmdId, nextSeq()); enqueue(p)
         Logger.log("TX test 7D/${String.format("%02x", cmdId)}  ${Logger.hex(p)}")
-    }
-    @Synchronized private fun enqueue(p: ByteArray) { pending.add(p) }
-
-    /** Séquence d'activation caméra/vidéo (ce que l'écran caméra de DoFun envoie). */
-    fun enableVideo() {
-        val a6 = byteArrayOf(0xA6.toByte(), 0xA6.toByte(), 0xA6.toByte(), 0xA6.toByte())
-        val a5 = byteArrayOf(0xA5.toByte(), 0xA5.toByte(), 0xA5.toByte(), 0xA5.toByte())
-        Logger.log("TX activation caméra (u/v/t/n/w/x)")
-        // envoyées 2 fois pour fiabilité
-        repeat(2) {
-            enqueue(Protocol.cmd(0xE0, 0xC9, nextSeq()))          // u()
-            enqueue(Protocol.cmd(0xE0, 0xCA, nextSeq()))          // v()
-            enqueue(Protocol.cmd(0xE0, 0xC4, nextSeq()))          // t()
-            enqueue(Protocol.cmd(0x51, 0x15, nextSeq()))          // n()
-            enqueue(Protocol.cmd(0x51, 0x06, nextSeq(), a6))      // w()
-            enqueue(Protocol.cmd(0x51, 0x05, nextSeq(), a5))      // x()
-        }
     }
 
     private fun loop() {
@@ -121,22 +87,22 @@ class DroneLink(private val wifi: Network?) {
             addr = InetAddress.getByName(DRONE_IP)
             val s = DatagramSocket(null)
             s.reuseAddress = true
-            wifi?.bindSocket(s)          // forcer la route par le Wi-Fi du drone
-            s.bind(java.net.InetSocketAddress(LOCAL_PORT))
+            wifi?.bindSocket(s)          // Android 6+ : forcer la route par le Wi-Fi du drone
+            s.bind(InetSocketAddress(LOCAL_PORT))
             socket = s
         } catch (e: Exception) {
-            // repli : socket non liée à un port précis
             try {
                 val s = DatagramSocket()
                 wifi?.bindSocket(s)
                 socket = s
             } catch (_: Exception) { return }
         }
+        Logger.log("Socket commande prête (port local ${socket?.localPort})")
 
-        // démarre la réception de télémétrie une fois la socket prête
         rxThread = Thread { receiveLoop() }.apply { isDaemon = true; start() }
 
         var lastHb = 0L
+        var lastRtp = 0L
         while (running && !Thread.interrupted()) {
             val now = System.currentTimeMillis()
             counter = (counter + 1) and 0xFFFF
@@ -147,14 +113,68 @@ class DroneLink(private val wifi: Network?) {
             send(pkt, PORT_CONTROL)
 
             if (now - lastHb >= 1000) { send(Protocol.HEARTBEAT, PORT_CONTROL); lastHb = now }
-            // La demande de flux vidéo est désormais envoyée par VideoView depuis le socket 7078
-            // (pour que le drone renvoie la vidéo vers ce port, quel que soit son comportement).
+
+            // Vidéo : comme DoFun (L()), start-RTP toutes les 500 ms depuis le socket de commande,
+            // tant que le flux n'arrive pas.
+            if (video && now - lastRtp >= 500 && now - VideoState.lastPktMs > 1500) {
+                val p = Protocol.startRtp(RTP_PORT, nextSeq())
+                send(p, PORT_CONTROL)
+                lastRtp = now
+                if (rtpReqLogged < 3) { rtpReqLogged++; Logger.log("TX start-RTP  ${Logger.hex(p)}") }
+            }
+
             synchronized(this) {
                 while (pending.isNotEmpty()) send(pending.removeAt(0), PORT_CONTROL)
             }
             try { Thread.sleep(50) } catch (_: InterruptedException) { break }  // 20 Hz
         }
         socket?.close()
+    }
+
+    private fun receiveLoop() {
+        val s = socket ?: return
+        val buf = ByteArray(4096)
+        val pkt = DatagramPacket(buf, buf.size)
+        try { s.soTimeout = 1000 } catch (_: Exception) {}
+        while (running && !Thread.interrupted()) {
+            try {
+                pkt.length = buf.size
+                s.receive(pkt)
+                val n = pkt.length
+                lastRxMs = System.currentTimeMillis()
+                rxCount++
+                if (n > maxRx) maxRx = n
+
+                if (n >= 4 && (buf[0].toInt() and 0xFF) == 0x0A) {
+                    // Réponse du drone : 0A LEN MODULE CMD ...
+                    val mod = buf[2].toInt() and 0xFF
+                    val cmd = buf[3].toInt() and 0xFF
+                    val key = (mod shl 8) or cmd
+                    val c = seen[key] ?: 0
+                    if (c < 3) {
+                        seen[key] = c + 1
+                        Logger.log("RX ${String.format("%02x/%02x", mod, cmd)} ${n}o  ${Logger.hex(buf, minOf(n, 12))}")
+                    }
+                    if (mod == 0x7D && cmd == 0x01 && n >= 7) onRtpAck(buf[6].toInt() and 0xFF)
+                } else if (rxCount <= 3 || n > 200) {
+                    Logger.log("RX ?? ${n}o  ${Logger.hex(buf, minOf(n, 12))}")
+                }
+            } catch (_: java.net.SocketTimeoutException) {
+            } catch (_: Exception) { break }
+        }
+    }
+
+    /** Réponse du drone à start-RTP. Code 1 = accepté → poignée de main vidéo de DoFun. */
+    private fun onRtpAck(status: Int) {
+        if (status == 1) {
+            rtpAcks++
+            enqueue(Protocol.moduleCmd(0x7D, 0x04, nextSeq()))   // h()
+            enqueue(Protocol.moduleCmd(0x7D, 0x11, nextSeq()))   // i()
+            enqueue(Protocol.moduleCmd(0x7D, 0x03, nextSeq()))   // d()  (écran caméra ouvert)
+            if (rtpAcks <= 3) Logger.log("start-RTP ACCEPTÉ → envoi 7D/04, 7D/11, 7D/03")
+        } else if (rtpAcks < 3) {
+            Logger.log("start-RTP REFUSÉ, code $status")
+        }
     }
 
     private fun send(data: ByteArray, port: Int) {

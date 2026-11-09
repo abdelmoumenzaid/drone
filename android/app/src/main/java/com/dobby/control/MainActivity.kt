@@ -106,7 +106,7 @@ class MainActivity : Activity() {
         val armedTxt = if (l?.armed == true) "ARMÉ" else "DÉSARMÉ"
         val droneTxt = if (l != null && System.currentTimeMillis() - l.lastRxMs < 2000)
             "Drone ✓ (${l.rxCount}, max ${l?.maxRx}o)" else "Drone ✗ pas de réponse"
-        val vidTxt = if (camOn) "   Vidéo: ${videoView.packetCount} paq" else ""
+        val vidTxt = if (camOn) "   Vidéo: ${videoView.packetCount} paq, OK drone ${l?.rtpAcks ?: 0}" else ""
         txtStatus.text = "$armedTxt    $droneTxt$vidTxt"
         txtLog.text = Logger.dump()
     }
@@ -128,6 +128,8 @@ class MainActivity : Activity() {
         if (link != null) return
         videoView.wifi = wifi
         link = DroneLink(wifi).also { it.start() }
+        // Comme DoFun : le socket vidéo écoute dès la connexion, pour ne perdre aucun paquet.
+        videoView.start()
         toast("Liaison drone démarrée")
     }
 
@@ -138,11 +140,11 @@ class MainActivity : Activity() {
     }
 
     private fun toggleCam(btnCam: Button) {
+        // CAM lance (ou arrête) la poignée de main vidéo : start-RTP → OK du drone → 7D/04, 7D/11, 7D/03.
         link?.video = camOn
-        if (camOn) {
-            link?.enableVideo()          // séquence d'activation caméra
-            videoView.start(); btnCam.text = "CAM ■"; toast("Flux vidéo démarré")
-        } else { videoView.stop(); btnCam.text = "CAM" }
+        Logger.log(if (camOn) "CAM activée" else "CAM désactivée")
+        if (camOn) { btnCam.text = "CAM ■"; toast("Demande vidéo envoyée") }
+        else btnCam.text = "CAM"
     }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()

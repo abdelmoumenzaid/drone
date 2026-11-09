@@ -21,14 +21,19 @@ object Protocol {
 
     /** Paquet RC : A0 18 01 + 10 canaux (16 bits big-endian) + checksum. 24 octets. */
     fun rc(roll: Int, pitch: Int, throttle: Int, yaw: Int, counter: Int): ByteArray {
-        val ch = intArrayOf(roll, pitch, throttle, yaw, NEUTRAL, NEUTRAL, NEUTRAL,
-            counter and 0xFFFF, NEUTRAL, NEUTRAL)
+        // Seuls les 4 manches sont bornés à 1000..2000.
+        // Le canal 8 est un compteur libre (wifiDelayCh8 dans DoFun) : le drone mesure la
+        // qualité de liaison avec. S'il est figé, le drone croit la liaison perdue et se pose.
+        val ch = intArrayOf(
+            roll.coerceIn(1000, 2000), pitch.coerceIn(1000, 2000),
+            throttle.coerceIn(1000, 2000), yaw.coerceIn(1000, 2000),
+            NEUTRAL, NEUTRAL, NEUTRAL, counter, NEUTRAL, NEUTRAL)
         val buf = ByteArray(24)
         buf[0] = 0xA0.toByte()
         buf[1] = 24
         buf[2] = 0x01
         for (i in 0 until 10) {
-            val v = ch[i].coerceIn(1000, 2000) and 0xFFFF
+            val v = ch[i] and 0xFFFF
             buf[3 + i * 2] = ((v ushr 8) and 0xFF).toByte()
             buf[4 + i * 2] = (v and 0xFF).toByte()
         }

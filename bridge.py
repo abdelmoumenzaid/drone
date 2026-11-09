@@ -49,12 +49,15 @@ def checksum(buf: bytearray) -> int:
 
 def rc_packet(roll, pitch, throttle, yaw, counter):
     """A0 18 01 + 10 canaux (16 bits BE) + checksum. 24 octets."""
-    ch = [roll, pitch, throttle, yaw, NEUTRAL, NEUTRAL, NEUTRAL,
+    # Seuls les 4 manches sont bornés. Le canal 8 est un compteur libre (wifiDelayCh8) :
+    # figé, le drone croit la liaison perdue et se pose.
+    stick = lambda v: max(1000, min(2000, int(v)))
+    ch = [stick(roll), stick(pitch), stick(throttle), stick(yaw), NEUTRAL, NEUTRAL, NEUTRAL,
           counter & 0xFFFF, NEUTRAL, NEUTRAL]
     buf = bytearray(24)
     buf[0] = 0xA0; buf[1] = 24; buf[2] = 0x01
     for i, v in enumerate(ch):
-        v = max(1000, min(2000, int(v))) & 0xFFFF
+        v = int(v) & 0xFFFF
         buf[3 + i * 2] = (v >> 8) & 0xFF
         buf[4 + i * 2] = v & 0xFF
     buf[23] = checksum(buf)
@@ -115,6 +118,11 @@ class UDP(asyncio.DatagramProtocol):
 
     def datagram_received(self, data, addr):
         state.last_rx = time.time()
+        # Réponse du drone à start-RTP (0A .. 7D 01 .. statut) : si OK, poignée de main
+        # vidéo de DoFun (événement 13) -> 7D/04, 7D/11, 7D/03.
+        if len(data) >= 7 and data[0] == 0x0A and data[2] == 0x7D and data[3] == 0x01 and data[6] == 1:
+            for c in (0x04, 0x11, 0x03):
+                state.pending.append(module_cmd(0x7D, c, state.next_seq()))
         payload = json.dumps({"t": "tel", "raw": data[:32].hex(" ")})
         for ws in list(clients):
             asyncio.create_task(ws.send_str(payload))
