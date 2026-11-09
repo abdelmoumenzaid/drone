@@ -11,7 +11,7 @@
         android:allowBackup="true"
         android:label="Dobby Control"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Dobby">
+        android:theme="@android:style/Theme.Holo.NoActionBar.Fullscreen">
         <activity
             android:name=".MainActivity"
             android:exported="true"

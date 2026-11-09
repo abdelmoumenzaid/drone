@@ -25,6 +25,7 @@ class VideoView @JvmOverloads constructor(
     @Volatile private var running = false
     private var thread: Thread? = null
     private var codec: MediaCodec? = null
+    private var inputBuffers: Array<java.nio.ByteBuffer>? = null
     private var configured = false
     private var sps: ByteArray? = null
     private var pps: ByteArray? = null
@@ -130,6 +131,8 @@ class VideoView @JvmOverloads constructor(
             val c = MediaCodec.createDecoderByType("video/avc")
             c.configure(fmt, holder.surface, null, 0)
             c.start()
+            @Suppress("DEPRECATION")
+            inputBuffers = c.inputBuffers       // API 16+ (compatible Android 4.4)
             codec = c
             configured = true
         } catch (_: Exception) {}
@@ -137,10 +140,11 @@ class VideoView @JvmOverloads constructor(
 
     private fun feed(au: ByteArray) {
         val c = codec ?: return
+        val bufs = inputBuffers ?: return
         try {
             val inIdx = c.dequeueInputBuffer(10000)
             if (inIdx >= 0) {
-                val ib = c.getInputBuffer(inIdx) ?: return
+                val ib = bufs[inIdx]
                 ib.clear(); ib.put(au)
                 c.queueInputBuffer(inIdx, 0, au.size, System.nanoTime() / 1000, 0)
             }

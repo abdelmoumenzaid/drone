@@ -1,19 +1,27 @@
 package com.dobby.control
 
+import android.app.Activity
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.os.Build
 import android.os.Bundle
+import android.widget.Button
+import android.widget.Switch
+import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import com.dobby.control.databinding.ActivityMainBinding
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : Activity() {
 
-    private lateinit var b: ActivityMainBinding
+    private lateinit var videoView: VideoView
+    private lateinit var stickLeft: JoystickView
+    private lateinit var stickRight: JoystickView
+    private lateinit var txtStatus: TextView
+    private lateinit var btnTakeoff: Button
+    private lateinit var btnLand: Button
+
     private var link: DroneLink? = null
-    private var cm: ConnectivityManager? = null
     private var wifi: Network? = null
     private var camOn = false
 
@@ -22,33 +30,43 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        b = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(b.root)
+        setContentView(R.layout.activity_main)
 
-        cm = getSystemService(ConnectivityManager::class.java)
-        requestWifi()
+        videoView = findViewById(R.id.videoView)
+        stickLeft = findViewById(R.id.stickLeft)
+        stickRight = findViewById(R.id.stickRight)
+        txtStatus = findViewById(R.id.txtStatus)
+        btnTakeoff = findViewById(R.id.btnTakeoff)
+        btnLand = findViewById(R.id.btnLand)
+        val btnStop = findViewById<Button>(R.id.btnStop)
+        val btnCam = findViewById<Button>(R.id.btnCam)
+        val swArm = findViewById<Switch>(R.id.swArm)
 
         // Joystick gauche : x = lacet, y = gaz (haut = +)
-        b.stickLeft.onMove = { x, y ->
+        stickLeft.onMove = { x, y ->
             link?.yaw = (NEUTRAL + x * RANGE).toInt()
             link?.throttle = (NEUTRAL - y * RANGE).toInt()
         }
         // Joystick droit : x = translation (roll), y = avant/arrière (pitch)
-        b.stickRight.onMove = { x, y ->
+        stickRight.onMove = { x, y ->
             link?.roll = (NEUTRAL + x * RANGE).toInt()
             link?.pitch = (NEUTRAL - y * RANGE).toInt()
         }
 
-        b.swArm.setOnCheckedChangeListener { _, checked -> setArmed(checked) }
-        b.btnTakeoff.setOnClickListener { if (link?.armed == true) { link?.takeoff(); toast("Décollage envoyé") } }
-        b.btnLand.setOnClickListener { if (link?.armed == true) { link?.land(); toast("Atterrissage envoyé") } }
-        b.btnStop.setOnClickListener {
-            link?.setNeutral(); b.swArm.isChecked = false; setArmed(false); toast("ARRÊT D'URGENCE")
+        swArm.setOnCheckedChangeListener { _, checked -> setArmed(checked) }
+        btnTakeoff.setOnClickListener { if (link?.armed == true) { link?.takeoff(); toast("Décollage envoyé") } }
+        btnLand.setOnClickListener { if (link?.armed == true) { link?.land(); toast("Atterrissage envoyé") } }
+        btnStop.setOnClickListener {
+            link?.setNeutral(); swArm.isChecked = false; setArmed(false); toast("ARRÊT D'URGENCE")
         }
-        b.btnCam.setOnClickListener { toggleCam() }
+        btnCam.setOnClickListener { camOn = !camOn; toggleCam(btnCam) }
+
+        // Binding au Wi-Fi du drone : seulement sur Android 6+ (le J1 route déjà par le Wi-Fi).
+        if (Build.VERSION.SDK_INT >= 23) requestWifi() else startLink()
     }
 
     private fun requestWifi() {
+        val cm = getSystemService(ConnectivityManager::class.java)
         val req = NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .build()
@@ -62,24 +80,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun startLink() {
         if (link != null) return
-        b.videoView.wifi = wifi
+        videoView.wifi = wifi
         link = DroneLink(wifi).also { it.start() }
-        toast("Connecté au Wi-Fi du drone")
+        toast("Liaison drone démarrée")
     }
 
     private fun setArmed(on: Boolean) {
         link?.armed = on
         if (!on) link?.setNeutral()
-        b.txtStatus.text = if (on) "ARMÉ" else "DÉSARMÉ"
-        b.btnTakeoff.isEnabled = on
-        b.btnLand.isEnabled = on
+        txtStatus.text = if (on) "ARMÉ" else "DÉSARMÉ"
+        btnTakeoff.isEnabled = on
+        btnLand.isEnabled = on
     }
 
-    private fun toggleCam() {
-        camOn = !camOn
+    private fun toggleCam(btnCam: Button) {
         link?.video = camOn
-        if (camOn) { b.videoView.start(); b.btnCam.text = "CAM ■"; toast("Flux vidéo démarré") }
-        else { b.videoView.stop(); b.btnCam.text = "CAM" }
+        if (camOn) { videoView.start(); btnCam.text = "CAM ■"; toast("Flux vidéo démarré") }
+        else { videoView.stop(); btnCam.text = "CAM" }
     }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
@@ -87,6 +104,6 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         link?.stop()
-        b.videoView.stop()
+        videoView.stop()
     }
 }

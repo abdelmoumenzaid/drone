@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId "com.dobby.control"
-        minSdk 23
+        minSdk 19           // Android 4.4 KitKat — couvre tous les Galaxy J1
         targetSdk 34
         versionCode 1
         versionName "1.0"
@@ -27,14 +27,12 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
-    buildFeatures {
-        viewBinding true
+    lint {
+        abortOnError false      // APK sideload : ne pas bloquer sur les avertissements NewApi
     }
 }
 
 dependencies {
-    implementation 'androidx.core:core-ktx:1.13.1'
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'com.google.android.material:material:1.12.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    // Aucune bibliothèque AndroidX : elles imposent Android 5+. Tout en composants système.
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.24"
 }
