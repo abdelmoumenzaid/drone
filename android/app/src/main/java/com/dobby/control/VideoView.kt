@@ -64,9 +64,23 @@ class VideoView @JvmOverloads constructor(
             sock.soTimeout = 2000
         } catch (_: Exception) { return }
 
+        try { sock.soTimeout = 300 } catch (_: Exception) {}
+        val drone = try { java.net.InetAddress.getByName(DroneLink.DRONE_IP) } catch (_: Exception) { sock.close(); return }
         val buf = ByteArray(2048)
         val pkt = DatagramPacket(buf, buf.size)
+        var seq = 0
+        var lastReq = 0L
         while (running && !Thread.interrupted()) {
+            val now = System.currentTimeMillis()
+            // Demande le flux vidéo DEPUIS ce socket (source = 7078) toutes les ~400 ms.
+            if (now - lastReq >= 400) {
+                seq = (seq + 1) and 0xFFFF
+                try {
+                    val req = Protocol.startRtp(DroneLink.RTP_PORT, seq)
+                    sock.send(DatagramPacket(req, req.size, drone, DroneLink.PORT_CONTROL))
+                } catch (_: Exception) {}
+                lastReq = now
+            }
             try {
                 sock.receive(pkt)
                 packetCount++

@@ -27,9 +27,10 @@ class DroneLink(private val wifi: Network?) {
     @Volatile var armed = false
     @Volatile var video = false
 
-    // Diagnostic : dernière réception d'un paquet du drone + compteur.
+    // Diagnostic : dernière réception d'un paquet du drone + compteur + plus gros paquet reçu.
     @Volatile var lastRxMs = 0L
     @Volatile var rxCount = 0
+    @Volatile var maxRx = 0
 
     // Décollage / atterrissage : à confirmer par capture. null = bouton inactif (sécurité).
     // Exemple une fois confirmé : Pair(0x51, 0x2C)
@@ -64,6 +65,7 @@ class DroneLink(private val wifi: Network?) {
                 s.receive(pkt)
                 lastRxMs = System.currentTimeMillis()
                 rxCount++
+                if (pkt.length > maxRx) maxRx = pkt.length
             } catch (_: java.net.SocketTimeoutException) {
             } catch (_: Exception) { break }
         }
@@ -105,7 +107,6 @@ class DroneLink(private val wifi: Network?) {
         rxThread = Thread { receiveLoop() }.apply { isDaemon = true; start() }
 
         var lastHb = 0L
-        var lastRtp = 0L
         while (running && !Thread.interrupted()) {
             val now = System.currentTimeMillis()
             counter = (counter + 1) and 0xFFFF
@@ -116,9 +117,8 @@ class DroneLink(private val wifi: Network?) {
             send(pkt, PORT_CONTROL)
 
             if (now - lastHb >= 1000) { send(Protocol.HEARTBEAT, PORT_CONTROL); lastHb = now }
-            if (video && now - lastRtp >= 500) {
-                send(Protocol.startRtp(RTP_PORT, nextSeq()), PORT_CONTROL); lastRtp = now
-            }
+            // La demande de flux vidéo est désormais envoyée par VideoView depuis le socket 7078
+            // (pour que le drone renvoie la vidéo vers ce port, quel que soit son comportement).
             synchronized(this) {
                 while (pending.isNotEmpty()) send(pending.removeAt(0), PORT_CONTROL)
             }

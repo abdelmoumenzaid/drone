@@ -78,7 +78,7 @@ class MainActivity : Activity() {
         val l = link
         val armedTxt = if (l?.armed == true) "ARMÉ" else "DÉSARMÉ"
         val droneTxt = if (l != null && System.currentTimeMillis() - l.lastRxMs < 2000)
-            "Drone ✓ (${l.rxCount})" else "Drone ✗ pas de réponse"
+            "Drone ✓ (${l.rxCount}, max ${l?.maxRx}o)" else "Drone ✗ pas de réponse"
         val vidTxt = if (camOn) "   Vidéo: ${videoView.packetCount} paq" else ""
         txtStatus.text = "$armedTxt    $droneTxt$vidTxt"
     }
