@@ -1,0 +1,69 @@
+package com.dobby.control
+
+/**
+ * Protocole de contrôle du ZeroTech Dobby (reconstitué depuis DoFun 2.2.6).
+ *
+ * Paquet générique :  A0 | LEN | MODULE | CMD | SEQ(2) | payload | CHECKSUM
+ * Checksum = somme additive de tous les octets sauf le dernier, & 0xFF.
+ * Tout est confirmé par décompilation ; décollage/atterrissage à confirmer par capture.
+ */
+object Protocol {
+    const val NEUTRAL = 1500
+
+    // Heartbeat fixe (confirmé) : A0 05 E0 C0 45
+    val HEARTBEAT = byteArrayOf(0xA0.toByte(), 0x05, 0xE0.toByte(), 0xC0.toByte(), 0x45)
+
+    private fun checksum(buf: ByteArray): Int {
+        var s = 0
+        for (i in 0 until buf.size - 1) s += buf[i].toInt() and 0xFF
+        return s and 0xFF
+    }
+
+    /** Paquet RC : A0 18 01 + 10 canaux (16 bits big-endian) + checksum. 24 octets. */
+    fun rc(roll: Int, pitch: Int, throttle: Int, yaw: Int, counter: Int): ByteArray {
+        val ch = intArrayOf(roll, pitch, throttle, yaw, NEUTRAL, NEUTRAL, NEUTRAL,
+            counter and 0xFFFF, NEUTRAL, NEUTRAL)
+        val buf = ByteArray(24)
+        buf[0] = 0xA0.toByte()
+        buf[1] = 24
+        buf[2] = 0x01
+        for (i in 0 until 10) {
+            val v = ch[i].coerceIn(1000, 2000) and 0xFFFF
+            buf[3 + i * 2] = ((v ushr 8) and 0xFF).toByte()
+            buf[4 + i * 2] = (v and 0xFF).toByte()
+        }
+        buf[23] = checksum(buf).toByte()
+        return buf
+    }
+
+    /** Commande module/cmd simple : A0 07 <module> <cmd> <seq_hi> <seq_lo> <chk>. */
+    fun moduleCmd(module: Int, cmd: Int, seq: Int): ByteArray {
+        val buf = ByteArray(7)
+        buf[0] = 0xA0.toByte()
+        buf[1] = 7
+        buf[2] = (module and 0xFF).toByte()
+        buf[3] = (cmd and 0xFF).toByte()
+        buf[4] = ((seq ushr 8) and 0xFF).toByte()
+        buf[5] = (seq and 0xFF).toByte()
+        buf[6] = checksum(buf).toByte()
+        return buf
+    }
+
+    /**
+     * Démarre le flux vidéo : module 0x7D, cmd 0x01, paramètre = port local (little-endian).
+     * A0 09 7D 01 <seq_hi> <seq_lo> <port_lo> <port_hi> <chk>.
+     */
+    fun startRtp(port: Int, seq: Int): ByteArray {
+        val buf = ByteArray(9)
+        buf[0] = 0xA0.toByte()
+        buf[1] = 9
+        buf[2] = 0x7D
+        buf[3] = 0x01
+        buf[4] = ((seq ushr 8) and 0xFF).toByte()
+        buf[5] = (seq and 0xFF).toByte()
+        buf[6] = (port and 0xFF).toByte()
+        buf[7] = ((port ushr 8) and 0xFF).toByte()
+        buf[8] = checksum(buf).toByte()
+        return buf
+    }
+}

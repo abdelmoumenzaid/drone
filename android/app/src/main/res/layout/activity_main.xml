@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0a0e14"
+    android:keepScreenOn="true">
+
+    <com.dobby.control.VideoView
+        android:id="@+id/videoView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Barre d'état -->
+    <TextView
+        android:id="@+id/txtStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:padding="8dp"
+        android:background="#88000000"
+        android:textColor="#e7edf5"
+        android:textSize="13sp"
+        android:text="DÉSARMÉ" />
+
+    <!-- Joystick gauche : monter/descendre + lacet -->
+    <com.dobby.control.JoystickView
+        android:id="@+id/stickLeft"
+        android:layout_width="200dp"
+        android:layout_height="200dp"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="24dp" />
+
+    <!-- Joystick droit : avant/arrière + translation -->
+    <com.dobby.control.JoystickView
+        android:id="@+id/stickRight"
+        android:layout_width="200dp"
+        android:layout_height="200dp"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="24dp" />
+
+    <!-- Contrôles centraux -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <Button android:id="@+id/btnCam"
+            android:layout_width="150dp" android:layout_height="wrap_content"
+            android:text="CAM" android:backgroundTint="#1f2a38" android:textColor="#e7edf5" />
+
+        <Button android:id="@+id/btnTakeoff"
+            android:layout_width="150dp" android:layout_height="wrap_content"
+            android:text="Décollage" android:enabled="false"
+            android:backgroundTint="#14655d" android:textColor="#e7edf5" />
+
+        <Button android:id="@+id/btnLand"
+            android:layout_width="150dp" android:layout_height="wrap_content"
+            android:text="Atterrissage" android:enabled="false"
+            android:backgroundTint="#8a6413" android:textColor="#e7edf5" />
+
+        <Button android:id="@+id/btnStop"
+            android:layout_width="150dp" android:layout_height="wrap_content"
+            android:text="ARRÊT D'URGENCE"
+            android:backgroundTint="#8a1f22" android:textColor="#e7edf5" />
+
+        <Switch android:id="@+id/swArm"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Armer" android:textColor="#7d8b9c" />
+    </LinearLayout>
+</FrameLayout>
